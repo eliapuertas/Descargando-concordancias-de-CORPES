@@ -1,4 +1,4 @@
-# CLI para parsear concordancias del CORDE
+# Descarga de concordancias del CORDE
 
 ## Requisitos previos
 
