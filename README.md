@@ -24,7 +24,7 @@ pip install -r requirements.txt
 Una vez que hayamos configurado el entorno la forma más fácil de empezar a trabajar es la siguiente:
 
 ```bash
-python corde_scrapper.py -b firefox -t concord -v
+python corde_scraper.py -b firefox -t concord -v
 ```
 
 Las opciones:
