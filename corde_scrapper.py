@@ -141,58 +141,81 @@ def configurar_driver(navegador):
         logging.error(f"Error en configurar_driver: {e}")
         raise
 
-def parsear_concordancia(ocurrencia:str)->list[str]:
+def parsear_concordancia(ocurrencia: str) -> list[str]:
     """
     Dado un string que contiene las columnas que debemos extraer,
     utilizamos varias regex para obtener una lista de strings.
+    Devuelve siempre los resultados, aunque falten o sobren columnas.
     """
-    result = []
     if not ocurrencia:
-        return None
-    # Primero el ** separa los dos primeros campos
+        return []
+
+    # Separación inicial por "**"
     first_processing = ocurrencia.split("**")
-    
     if len(first_processing) != 2:
-        # No podemos manejar este caso
-        return None
+        return [ocurrencia.strip()]
+
     num_concord = first_processing[0].strip()
     year_autor = first_processing[1].strip()
 
-    # Ahora volvemos a dividir 
-    # Utilizamos una regex para asegurarnos de no romper el texto
-    # Regex_patt 1
-    #result.extend(re.split(r'(?<=\d)\s{2,}', num_concord))
+    result = []
     result.extend(REGEX_PATTERN_1.split(num_concord))
-    if len(result) != 2:
-        # Tampoco manejamos este caso
-        return None
-    
-    # De la segunda parte volvemos a dividir para separar
-    # el tema y publicacion
-    # REGEX PATT 2
-    #second_processing = re.split(r'\s(?=\d+\.[A-Z].+)', year_autor)
-    second_processing = REGEX_PATTERN_2.split(year_autor)
-    if len(second_processing) != 2:
-        # Tampoco manejamos esta caso
-        return None
-    year_autor_2 = second_processing[0].strip()
-    topic_pub = second_processing[1].strip()
 
-    # Ahora volvemos a dividir e incluimos
-    # REGEX PATT 3
-    #result.extend(re.split(r'\s{2,}', year_autor_2))
+    # Separación año / autor
+    second_processing = REGEX_PATTERN_2.split(year_autor)
+    if len(second_processing) == 2:
+        year_autor_2 = second_processing[0].strip()
+        topic_pub = second_processing[1].strip()
+    else:
+        year_autor_2 = year_autor
+        topic_pub = ""
+
     result.extend(REGEX_PATTERN_3.split(year_autor_2))
 
-    if len(result)!=6:
-        return None
-    # ya solo queda el ultimo
-    # REGEX_PATT 4
-    #result.extend(re.split(r'\s(?=[A-Z])',topic_pub, maxsplit=1))
-    result.extend(REGEX_PATTERN_4.split(topic_pub, maxsplit=1))
-    if len(result) != 8:
-        return None
-    
-    return result
+    # Separación título / país
+    if topic_pub:
+        partes = REGEX_PATTERN_4.split(topic_pub, maxsplit=1)
+        result.extend(partes)
+    else:
+        result.append(topic_pub)
+
+    # Rellenamos hasta 8 campos
+    while len(result) < 8:
+        result.append('_')
+
+    titulo = result[4]
+
+    # Buscamos el país
+    pattern_pais_final = re.compile(
+        r'\b([A-ZÁÉÍÓÚÑÜ]{2,}(?:\s+[A-ZÁÉÍÓÚÑÜ]{2,})*)\b(?=[\s\]\)\.\,\;\:\-]*$)',
+        re.UNICODE
+    )
+    match_pais = pattern_pais_final.search(titulo)
+
+    if not match_pais:
+        posibles_mayus = re.findall(r'\b[A-ZÁÉÍÓÚÑÜ]{3,}\b', titulo)
+        if posibles_mayus:
+            candidato = posibles_mayus[-1]  # tomamos la última palabra en mayúsculas
+            # Excluir números romanos
+            if not re.fullmatch(
+                r'I{1,3}|IV|V|VI{0,3}|IX|X|XI{0,3}|XV|XX|XXX|XL|L|LX|LXX|XC|C|CC|CCC|CD|D|DC|DCC|CM|M{1,4}',
+                candidato
+            ):
+                match_pais = re.search(re.escape(candidato), titulo)
+
+    # Separamos el título y el país
+    if match_pais:
+        posible_pais = match_pais.group(0).strip()
+        # Eliminamos solo el país detectado del título
+        result[4] = re.sub(r'\s*' + re.escape(posible_pais) + r'[\s\]\)\.\,\;\:\-]*', '', titulo).strip()
+
+        if result[5] not in ['_', '']:
+            result.insert(5, posible_pais)
+            result = result[:8]
+        else:
+            result[5] = posible_pais
+
+    return result[:8]
 
 def extraer_concordancias(driver):
     """
@@ -342,7 +365,6 @@ def main():
                         help="Ajusta el logging a INFO-level"
     )
     args = parser.parse_args()
-    # -------------------------
     # Configruamos el logging
     log_level = logging.INFO if args.verbose else logging.WARNING
     logging.basicConfig(
@@ -352,7 +374,8 @@ def main():
         force=True  # Python 3.8+: override any existing handlers
     )
     logging.info("Comenzando la ejecución del script.")
-    # -------------------------
+
+
     navegador = args.browser.lower()
     driver = configurar_driver(navegador)
     driver.set_page_load_timeout(300)
